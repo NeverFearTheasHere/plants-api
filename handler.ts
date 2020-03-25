@@ -1,28 +1,45 @@
 import { APIGatewayProxyHandler } from 'aws-lambda';
 import 'source-map-support/register';
 import { Expo } from 'expo-server-sdk';
+import { getAllUsersAsync, addOrUpdateUserAsync, User, getUserAsync } from './database';
+import { plants } from './plants';
 
 const expo = new Expo();
-const allPushTokens = ['ExponentPushToken[XVbCnmL44cuKw9CUG-_5La]'];
 
 export const registerPushToken: APIGatewayProxyHandler = async (event, _context) => {
   const { body } = event
-  let pushToken;
-
   const bodyJson = JSON.parse(body);
-  pushToken = bodyJson.pushToken;
 
-  allPushTokens.push(pushToken);
+  const user: User = {
+    pushToken: bodyJson.pushToken,
+    name: bodyJson.name,
+  };
+
+  await addOrUpdateUserAsync(user);
 
   return {
     statusCode: 200,
     body: JSON.stringify({
-      message: `Registered push token: ${pushToken}`,
+      message: `Registered push token ${user.pushToken} for ${user.name}`,
     }),
   };
 }
 
+export const getUser: APIGatewayProxyHandler = async (event, _context) => {
+  const { pathParameters: { pushToken } } = event;
+
+  let user = await getUserAsync(decodeURI(pushToken));
+
+  return {
+    statusCode: user == null ? 404 : 200,
+    body: JSON.stringify(user),
+  };
+}
+
 export const sendNotification: APIGatewayProxyHandler = async () => {
+  const allUsers = await getAllUsersAsync();
+  const allPushTokens = allUsers.map(user => user.pushToken);
+
   let messages = [];
   for (let pushToken of allPushTokens) {
     if (!Expo.isExpoPushToken(pushToken)) {
@@ -35,7 +52,7 @@ export const sendNotification: APIGatewayProxyHandler = async () => {
     messages.push({
       to: pushToken,
       sound: 'default',
-      body: `Don't forget to water your ${plant.displayName.toLowerCase()}`,
+      body: `Don't forget to water your ${plant.displayName}`,
       data: { plantId: plant.id },
     })
   }
@@ -49,7 +66,7 @@ export const sendNotification: APIGatewayProxyHandler = async () => {
       console.error(error);
     }
   }
-  
+
   return {
     statusCode: 200,
     body: JSON.stringify({
@@ -58,34 +75,6 @@ export const sendNotification: APIGatewayProxyHandler = async () => {
     }),
   };
 }
-
-type Plant = {
-  id: number,
-  displayName: string,
-};
-
-const plants: Array<Plant> = [
-  {
-    id: 1,
-    displayName: 'Redcurrant',
-  },
-  {
-    id: 2,
-    displayName: 'Clematis',
-  },
-  {
-    id: 3,
-    displayName: 'New Zealand Myrtle',
-  },
-  {
-    id: 4,
-    displayName: 'Three-coloured Nasturtium',
-  },
-  {
-    id: 5,
-    displayName: `Kale 'Redbor'`,
-  },
-];
 
 const GetRandomPlant = () => plants[Math.floor(Math.random() * plants.length)];
 

@@ -15,10 +15,24 @@ plugins:
 provider:
   name: aws
   runtime: nodejs12.x
+  region: eu-west-2
+  cfnRole: arn:aws:iam::830736752273:role/ServerlessDeploymentRole
   apiGateway:
     minimumCompressionSize: 1024 # Enable gzip compression for responses > 1 KB
   environment:
     AWS_NODEJS_CONNECTION_REUSE_ENABLED: 1
+  iamRoleStatements:
+    - Effect: Allow
+      Action:
+        - dynamodb:DescribeTable
+        - dynamodb:Query
+        - dynamodb:Scan
+        - dynamodb:GetItem
+        - dynamodb:PutItem
+        - dynamodb:UpdateItem
+        - dynamodb:DeleteItem
+      Resource:
+        - "Fn::GetAtt": [ usersTable, Arn ]
 
 functions:
   register:
@@ -28,9 +42,36 @@ functions:
           method: post
           path: register
 
+  getUser:
+    handler: handler.getUser
+    events:
+      - http:
+          method: get
+          path: user/{pushToken}
+          request:
+            parameters:
+              paths:
+                pushToken: true
+
   sendNotification:
     handler: handler.sendNotification
     events:
       - http:
           method: post
           path: send-notification
+
+resources:
+  Resources:
+    usersTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: users
+        AttributeDefinitions:
+          - AttributeName: pushToken
+            AttributeType: S
+        KeySchema:
+          - AttributeName: pushToken
+            KeyType: HASH
+        ProvisionedThroughput:
+          ReadCapacityUnits: 25
+          WriteCapacityUnits: 25
